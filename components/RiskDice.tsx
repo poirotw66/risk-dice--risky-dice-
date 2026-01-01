@@ -198,9 +198,14 @@ const IcosahedronDice: React.FC<{
   selectedFaceIndex?: number | null; // 預先決定的抽中面（0-19）
 }> = ({ outcome, isRolling, faceTexts, faceColors, faceHighlights, selectedFaceIndex }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const lastRollingState = useRef(isRolling);
   const [detectedFaceIndex, setDetectedFaceIndex] = useState<number | null>(null);
   const rotationCompleteRef = useRef(false);
+  const verificationRetryCountRef = useRef(0); // 驗證重試計數器，防止無限循環
+  
+  // 物理模擬：角速度（用於真實世界的轉動）
+  const angularVelocityRef = useRef(new THREE.Vector3(0, 0, 0));
+  const targetAngularVelocityRef = useRef(new THREE.Vector3(0, 0, 0));
+  const randomOffsetRef = useRef(new THREE.Vector3(0, 0, 0)); // 穩定的隨機偏移，避免每幀變化
 
   // 創建正二十面體的頂點和面 - 使用標準定義
   const faces = useMemo(() => {
@@ -252,12 +257,27 @@ const IcosahedronDice: React.FC<{
     return quaternion;
   }, [faces]);
 
-  // 當開始滾動時，重置旋轉完成標記
+  // 當開始滾動時，重置旋轉完成標記和物理狀態
   useEffect(() => {
     if (isRolling) {
       rotationCompleteRef.current = false;
+      verificationRetryCountRef.current = 0; // 重置驗證重試計數
+      // 重置角速度，給一個初始的隨機角速度（模擬投擲）
+      angularVelocityRef.current.set(
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8
+      );
+      targetAngularVelocityRef.current.set(0, 0, 0);
+      // 生成穩定的隨機偏移（在滾動期間保持不變）
+      randomOffsetRef.current.set(
+        (Math.random() - 0.5) * 3,
+        (Math.random() - 0.5) * 3,
+        (Math.random() - 0.5) * 3
+      );
+    } else {
+      // 停止滾動時，保持當前角速度（讓它自然減速）
     }
-    lastRollingState.current = isRolling;
   }, [isRolling]);
 
   // 計算目標旋轉四元數（讓上色的那一面完整朝向使用者）
@@ -276,82 +296,160 @@ const IcosahedronDice: React.FC<{
     return faceIndex !== null ? calculateTargetQuaternion(faceIndex) : new THREE.Quaternion();
   }, [selectedFaceIndex, detectedFaceIndex, calculateTargetQuaternion, isRolling]);
 
-  // 旋轉動畫 - 優化流暢度
+  // 真實世界的物理轉動模擬
   useFrame((state, delta) => {
     if (isRolling && groupRef.current) {
-      // 滾動時：朝著目標面旋轉，使用更流暢的動畫
+      // 滾動時：模擬真實世界的物理轉動
       rotationCompleteRef.current = false;
       
       if (selectedFaceIndex !== null && selectedFaceIndex !== undefined) {
-        // 使用四元數 SLERP 朝著目標旋轉，使用緩動函數讓動畫更流暢
+        // 計算目標方向（朝著目標面）
         const currentQuat = groupRef.current.quaternion;
         const targetQuat = targetQuaternion;
         
-        // 計算當前角度差
-        const angle = currentQuat.angleTo(targetQuat);
+        // 計算當前旋轉到目標旋轉的差異（作為"力"的方向）
+        const diffQuat = new THREE.Quaternion().multiplyQuaternions(
+          targetQuat.clone().invert(),
+          currentQuat
+        );
         
-        // 使用動態速度：距離越遠速度越快，接近時減速（緩動效果）
-        const baseSpeed = 3.0; // 基礎速度
-        const maxSpeed = 6.0; // 最大速度
-        const minSpeed = 1.0; // 最小速度（接近目標時）
+        // 將差異轉換為軸角表示（更穩定，避免萬向鎖）
+        const axis = new THREE.Vector3();
+        const angle = Math.acos(Math.max(-1, Math.min(1, diffQuat.w))) * 2;
         
-        // 根據角度差動態調整速度（緩動效果）
-        const normalizedAngle = Math.min(angle / Math.PI, 1); // 0 到 1
-        const speed = minSpeed + (maxSpeed - minSpeed) * normalizedAngle;
+        // 計算軸向量
+        if (angle > 0.0001) {
+          const s = Math.sin(angle / 2);
+          axis.set(diffQuat.x / s, diffQuat.y / s, diffQuat.z / s).normalize();
+        } else {
+          axis.set(0, 0, 1); // 默認軸
+        }
         
-        // 使用平滑的插值
-        const lerpFactor = Math.min(1, delta * speed);
-        currentQuat.slerp(targetQuat, lerpFactor);
+        // 計算目標角速度（朝著目標方向）
+        const targetSpeed = 6.0; // 降低目標角速度，使動畫更流暢
+        const speedFactor = 0.6 + Math.random() * 0.4; // 穩定的速度因子
+        
+        // 使用軸角計算角速度（更穩定）
+        targetAngularVelocityRef.current.copy(axis).multiplyScalar(angle * targetSpeed * speedFactor);
+        
+        // 加入穩定的隨機翻滾效果（使用預先計算的隨機偏移）
+        targetAngularVelocityRef.current.add(randomOffsetRef.current);
       } else {
-        // 如果還不知道目標面，則完全隨機旋轉（使用四元數）
-        const currentEuler = new THREE.Euler().setFromQuaternion(groupRef.current.quaternion);
-        currentEuler.x += delta * 5;
-        currentEuler.y += delta * 4;
-        currentEuler.z += delta * 3;
-        groupRef.current.quaternion.setFromEuler(currentEuler);
+        // 如果還不知道目標面，則完全隨機旋轉
+        targetAngularVelocityRef.current.set(
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10
+        );
       }
+      
+      // 物理模擬：角速度逐漸接近目標角速度（模擬慣性）
+      const damping = 0.2; // 增加阻尼係數，使動畫更穩定
+      angularVelocityRef.current.lerp(targetAngularVelocityRef.current, damping);
+      
+      // 應用角速度到旋轉（使用四元數增量，避免萬向鎖）
+      const rotationQuat = new THREE.Quaternion();
+      const axis = new THREE.Vector3();
+      const length = angularVelocityRef.current.length();
+      if (length > 0.0001) {
+        axis.copy(angularVelocityRef.current).normalize();
+        rotationQuat.setFromAxisAngle(axis, length * delta);
+        groupRef.current.quaternion.multiplyQuaternions(rotationQuat, groupRef.current.quaternion);
+      }
+      
+      // 模擬摩擦力：逐漸減速
+      angularVelocityRef.current.multiplyScalar(0.98);
+      
     } else if (groupRef.current && !isRolling && selectedFaceIndex !== null && selectedFaceIndex !== undefined) {
-      // 停止時：使用緩動函數平滑旋轉到目標位置
+      // 如果已經完成對齊，完全停止所有操作（避免抖動）
+      if (rotationCompleteRef.current) {
+        // 確保完全停止，不再進行任何對齊操作
+        angularVelocityRef.current.set(0, 0, 0);
+        return; // 直接返回，不再執行任何對齊邏輯
+      }
+      
+      // 停止時：確保最終停止在骰到的那一面上
       const currentQuat = groupRef.current.quaternion;
       const targetQuat = targetQuaternion;
       
       // 計算當前角度差
       const angle = currentQuat.angleTo(targetQuat);
       
-      // 使用緩動函數：開始快，接近時減速（ease-out）
-      // 使用平方根函數實現 ease-out 效果
-      const normalizedAngle = Math.min(angle / Math.PI, 1);
-      const easeOutFactor = 1 - Math.pow(1 - normalizedAngle, 2); // ease-out 曲線
-      
-      const baseSpeed = 8.0;
-      const maxSpeed = 15.0;
-      const speed = baseSpeed + (maxSpeed - baseSpeed) * easeOutFactor;
-      
-      // 使用平滑的插值
-      const lerpFactor = Math.min(1, delta * speed);
-      currentQuat.slerp(targetQuat, lerpFactor);
-      
-      // 當接近目標時，直接設置為目標值以避免微小抖動
-      const threshold = 0.0001;
-      
-      if (angle < threshold) {
-        // 確保精確對齊
-        currentQuat.copy(targetQuat);
+      // 如果還有角速度，先讓它自然減速並朝著目標面修正
+      if (angularVelocityRef.current.length() > 0.01) {
+        // 應用剩餘的角速度（使用四元數增量，避免萬向鎖）
+        const rotationQuat = new THREE.Quaternion();
+        const axis = new THREE.Vector3();
+        const length = angularVelocityRef.current.length();
+        if (length > 0.0001) {
+          axis.copy(angularVelocityRef.current).normalize();
+          rotationQuat.setFromAxisAngle(axis, length * delta);
+          groupRef.current.quaternion.multiplyQuaternions(rotationQuat, groupRef.current.quaternion);
+        }
         
-        if (!rotationCompleteRef.current) {
-          rotationCompleteRef.current = true;
-          
-          // 旋轉完成後，驗證是否正確朝向目標面
-          const actualFacingFace = detectFacingFace();
-          if (actualFacingFace === selectedFaceIndex) {
-            // 驗證成功，同步狀態
-            if (detectedFaceIndex !== selectedFaceIndex) {
-              setDetectedFaceIndex(selectedFaceIndex);
-            }
+        // 強烈的摩擦力，快速減速
+        angularVelocityRef.current.multiplyScalar(0.75); // 更強的摩擦力
+        
+        // 同時朝著目標方向施加"修正力"（確保最終停在目標面）
+        const diffQuat = new THREE.Quaternion().multiplyQuaternions(
+          targetQuat.clone().invert(),
+          groupRef.current.quaternion
+        );
+        
+        // 使用軸角計算修正力（更穩定）
+        const correctionAxis = new THREE.Vector3();
+        const correctionAngle = Math.acos(Math.max(-1, Math.min(1, diffQuat.w))) * 2;
+        
+        // 計算軸向量
+        if (correctionAngle > 0.0001) {
+          const s = Math.sin(correctionAngle / 2);
+          correctionAxis.set(diffQuat.x / s, diffQuat.y / s, diffQuat.z / s).normalize();
+        } else {
+          correctionAxis.set(0, 0, 1); // 默認軸
+        }
+        
+        // 根據角度差計算修正力（角度越大，修正力越大）
+        const correctionForce = Math.min(correctionAngle * 10, 15); // 適中的修正力
+        const correctionVelocity = correctionAxis.multiplyScalar(correctionForce);
+        angularVelocityRef.current.add(correctionVelocity.multiplyScalar(delta));
+      } else {
+        // 角速度已經很小，使用精確對齊（確保最終停在目標面）
+        const speed = 15.0; // 適中的速度，確保流暢對齊
+        const lerpFactor = Math.min(1, delta * speed);
+        currentQuat.slerp(targetQuat, lerpFactor);
+      }
+      
+      // 當接近目標時，直接設置為目標值（確保最終停止在骰到的那一面）
+      const threshold = 0.002; // 稍微放寬閾值，確保能觸發對齊
+      // 如果角度很小或角速度很小，強制對齊到目標面
+      if (angle < threshold || angularVelocityRef.current.length() < 0.02) {
+        // 強制對齊到目標面（骰到的那一面），確保停止
+        groupRef.current.quaternion.copy(targetQuat);
+        angularVelocityRef.current.set(0, 0, 0); // 完全停止
+        
+        // 標記為完成，避免重複對齊（這會導致抖動）
+        rotationCompleteRef.current = true;
+        
+        // 同步狀態（在 useFrame 中直接驗證，避免 requestAnimationFrame 衝突）
+        const actualFacingFace = detectFacingFace();
+        if (actualFacingFace === selectedFaceIndex) {
+          // 驗證成功，同步狀態
+          if (detectedFaceIndex !== selectedFaceIndex) {
+            setDetectedFaceIndex(selectedFaceIndex);
+          }
+          verificationRetryCountRef.current = 0; // 重置重試計數
+        } else {
+          // 驗證失敗，但有重試限制（防止無限循環）
+          verificationRetryCountRef.current += 1;
+          if (verificationRetryCountRef.current < 3) {
+            // 允許重試（最多3次）
+            console.warn(`Rotation verification failed (attempt ${verificationRetryCountRef.current}): expected face ${selectedFaceIndex}, got ${actualFacingFace}. Re-aligning...`);
+            rotationCompleteRef.current = false; // 允許重新驗證
           } else {
-            // 驗證失敗，重新計算旋轉
-            console.warn(`Rotation verification failed: expected face ${selectedFaceIndex}, got ${actualFacingFace}`);
-            rotationCompleteRef.current = false; // 允許重新旋轉
+            // 超過重試次數，強制接受當前狀態（避免無限循環）
+            console.warn(`Rotation verification failed after ${verificationRetryCountRef.current} attempts. Forcing alignment to face ${selectedFaceIndex}.`);
+            setDetectedFaceIndex(selectedFaceIndex);
+            verificationRetryCountRef.current = 0; // 重置計數器
           }
         }
       }
@@ -370,7 +468,6 @@ const IcosahedronDice: React.FC<{
   if (faces.length === 0) {
     return null;
   }
-
 
   return (
     <group ref={groupRef}>
