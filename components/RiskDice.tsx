@@ -6,6 +6,7 @@ import { DiceOutcome } from '../types';
 interface RiskDiceProps {
   outcome: DiceOutcome;
   isRolling: boolean;
+  selectedFaceIndex?: number | null; // 預先決定的抽中面（0-19）
 }
 
 // 單個面的組件
@@ -194,9 +195,8 @@ const IcosahedronDice: React.FC<{
   faceTexts: string[];
   faceColors: string[];
   faceHighlights: boolean[];
-  onFaceDetected?: (faceIndex: number) => void;
-  selectedFaceIndex?: number | null; // 上色的那一面（抽中的面）
-}> = ({ outcome, isRolling, faceTexts, faceColors, faceHighlights, onFaceDetected, selectedFaceIndex }) => {
+  selectedFaceIndex?: number | null; // 預先決定的抽中面（0-19）
+}> = ({ outcome, isRolling, faceTexts, faceColors, faceHighlights, selectedFaceIndex }) => {
   const groupRef = useRef<THREE.Group>(null);
   const lastRollingState = useRef(isRolling);
   const [detectedFaceIndex, setDetectedFaceIndex] = useState<number | null>(null);
@@ -252,23 +252,13 @@ const IcosahedronDice: React.FC<{
     return quaternion;
   }, [faces]);
 
-  // 當停止滾動時，立即檢測朝向相機的面（初步檢測）
+  // 當開始滾動時，重置旋轉完成標記
   useEffect(() => {
-    if (!isRolling && lastRollingState.current && groupRef.current) {
-      // 剛停止滾動，立即檢測朝向相機的面
-      const facingFace = detectFacingFace();
-      setDetectedFaceIndex(facingFace);
-      
-      // 通知父組件哪個面朝向相機
-      if (onFaceDetected) {
-        onFaceDetected(facingFace);
-      }
-    }
-    lastRollingState.current = isRolling;
     if (isRolling) {
       rotationCompleteRef.current = false;
     }
-  }, [isRolling, detectFacingFace, onFaceDetected]);
+    lastRollingState.current = isRolling;
+  }, [isRolling]);
 
   // 計算目標旋轉四元數（讓上色的那一面完整朝向使用者）
   const targetQuaternion = useMemo(() => {
@@ -286,28 +276,63 @@ const IcosahedronDice: React.FC<{
     return faceIndex !== null ? calculateTargetQuaternion(faceIndex) : new THREE.Quaternion();
   }, [selectedFaceIndex, detectedFaceIndex, calculateTargetQuaternion, isRolling]);
 
-  // 旋轉動畫 - 加快速度
+  // 旋轉動畫 - 優化流暢度
   useFrame((state, delta) => {
     if (isRolling && groupRef.current) {
-      // 滾動時隨機旋轉
+      // 滾動時：朝著目標面旋轉，使用更流暢的動畫
       rotationCompleteRef.current = false;
-      groupRef.current.rotation.x += delta * 5;
-      groupRef.current.rotation.y += delta * 4;
-      groupRef.current.rotation.z += delta * 3;
+      
+      if (selectedFaceIndex !== null && selectedFaceIndex !== undefined) {
+        // 使用四元數 SLERP 朝著目標旋轉，使用緩動函數讓動畫更流暢
+        const currentQuat = groupRef.current.quaternion;
+        const targetQuat = targetQuaternion;
+        
+        // 計算當前角度差
+        const angle = currentQuat.angleTo(targetQuat);
+        
+        // 使用動態速度：距離越遠速度越快，接近時減速（緩動效果）
+        const baseSpeed = 3.0; // 基礎速度
+        const maxSpeed = 6.0; // 最大速度
+        const minSpeed = 1.0; // 最小速度（接近目標時）
+        
+        // 根據角度差動態調整速度（緩動效果）
+        const normalizedAngle = Math.min(angle / Math.PI, 1); // 0 到 1
+        const speed = minSpeed + (maxSpeed - minSpeed) * normalizedAngle;
+        
+        // 使用平滑的插值
+        const lerpFactor = Math.min(1, delta * speed);
+        currentQuat.slerp(targetQuat, lerpFactor);
+      } else {
+        // 如果還不知道目標面，則完全隨機旋轉（使用四元數）
+        const currentEuler = new THREE.Euler().setFromQuaternion(groupRef.current.quaternion);
+        currentEuler.x += delta * 5;
+        currentEuler.y += delta * 4;
+        currentEuler.z += delta * 3;
+        groupRef.current.quaternion.setFromEuler(currentEuler);
+      }
     } else if (groupRef.current && !isRolling && selectedFaceIndex !== null && selectedFaceIndex !== undefined) {
-      // 停止時使用四元數平滑旋轉到目標位置，讓上色的那一面完整朝向相機
-      // 只有在 selectedFaceIndex 已設置時才旋轉
+      // 停止時：使用緩動函數平滑旋轉到目標位置
       const currentQuat = groupRef.current.quaternion;
       const targetQuat = targetQuaternion;
-      const speed = 10; // 提高旋轉速度
       
-      // 使用四元數球面線性插值（SLERP），更平滑且精確
+      // 計算當前角度差
+      const angle = currentQuat.angleTo(targetQuat);
+      
+      // 使用緩動函數：開始快，接近時減速（ease-out）
+      // 使用平方根函數實現 ease-out 效果
+      const normalizedAngle = Math.min(angle / Math.PI, 1);
+      const easeOutFactor = 1 - Math.pow(1 - normalizedAngle, 2); // ease-out 曲線
+      
+      const baseSpeed = 8.0;
+      const maxSpeed = 15.0;
+      const speed = baseSpeed + (maxSpeed - baseSpeed) * easeOutFactor;
+      
+      // 使用平滑的插值
       const lerpFactor = Math.min(1, delta * speed);
       currentQuat.slerp(targetQuat, lerpFactor);
       
       // 當接近目標時，直接設置為目標值以避免微小抖動
-      const threshold = 0.0001; // 更嚴格的閾值
-      const angle = currentQuat.angleTo(targetQuat);
+      const threshold = 0.0001;
       
       if (angle < threshold) {
         // 確保精確對齊
@@ -316,7 +341,7 @@ const IcosahedronDice: React.FC<{
         if (!rotationCompleteRef.current) {
           rotationCompleteRef.current = true;
           
-          // 旋轉完成後，驗證是否正確朝向目標面（上色的那一面）
+          // 旋轉完成後，驗證是否正確朝向目標面
           const actualFacingFace = detectFacingFace();
           if (actualFacingFace === selectedFaceIndex) {
             // 驗證成功，同步狀態
@@ -348,7 +373,7 @@ const IcosahedronDice: React.FC<{
 
 
   return (
-    <group ref={groupRef} rotation={[0, 0, 0]}>
+    <group ref={groupRef}>
       {faces.map((face, index) => (
         <DiceFace
           key={`face-${index}`}
@@ -363,36 +388,27 @@ const IcosahedronDice: React.FC<{
   );
 };
 
-const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
-  const [facingFaceIndex, setFacingFaceIndex] = useState<number | null>(null);
-  const lastOutcome = useRef(outcome);
-
-  // 當結果改變時，重置朝向面的索引
-  useEffect(() => {
-    if (outcome !== lastOutcome.current) {
-      setFacingFaceIndex(null);
-      lastOutcome.current = outcome;
-    }
-  }, [outcome]);
+const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling, selectedFaceIndex: propSelectedFaceIndex }) => {
+  // 使用傳入的預先決定的面索引，如果沒有則為 null
+  const selectedFaceIndex = propSelectedFaceIndex !== undefined ? propSelectedFaceIndex : null;
 
   // 計算每個面的文字、顏色和高亮狀態
-  // 最終朝向使用者的面就是抽中的面，根據結果上色
+  // 使用預先決定的面索引（selectedFaceIndex）作為抽中的面，根據結果上色
   const { faceTexts, faceColors, faceHighlights } = useMemo(() => {
     const texts: string[] = [];
     const colors: string[] = [];
     const highlights: boolean[] = [];
-    
-    // 如果檢測到朝向相機的面，將那個面設為"抽中的面"
-    // 如果還沒檢測到（滾動中或初始狀態），使用索引0作為默認
-    const selectedFaceIndex = facingFaceIndex !== null ? facingFaceIndex : 0;
 
     for (let i = 0; i < 20; i++) {
       let text = '大吉';
       let color = '#1e293b'; // slate-800
       let highlight = false;
 
-      // 如果這個面是朝向相機的面（抽中的面），根據結果上色
-      if (i === selectedFaceIndex && !isRolling && outcome !== DiceOutcome.IDLE && outcome !== DiceOutcome.ROLLING) {
+      // 如果這個面是預先決定的抽中面，根據結果上色
+      // 在滾動時也顯示顏色，讓用戶知道哪個面會被抽中
+      if (i === selectedFaceIndex && selectedFaceIndex !== null) {
+        // 如果還在滾動，根據 outcome 判斷（但 outcome 可能是 ROLLING）
+        // 如果已經停止，根據最終 outcome 上色
         if (outcome === DiceOutcome.GREAT_MISFORTUNE) {
           text = '大凶';
           color = '#7f1d1d'; // red-950
@@ -401,9 +417,15 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
           text = '大吉';
           color = '#ca8a04'; // yellow-600
           highlight = true;
+        } else if (outcome === DiceOutcome.ROLLING) {
+          // 滾動時，暫時顯示為灰色，但標記為高亮
+          text = '??';
+          color = '#475569'; // slate-600
+          highlight = false; // 滾動時不高亮
         } else {
           text = '??';
           color = '#475569'; // slate-600
+          highlight = false;
         }
       } else {
         // 其他面保持默認樣式
@@ -418,7 +440,7 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
     }
 
     return { faceTexts: texts, faceColors: colors, faceHighlights: highlights };
-  }, [outcome, facingFaceIndex, isRolling]);
+  }, [outcome, selectedFaceIndex]);
 
   return (
     <div className="relative w-64 h-64 z-20" style={{ minHeight: '256px' }}>
@@ -444,8 +466,7 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
           faceTexts={faceTexts}
           faceColors={faceColors}
           faceHighlights={faceHighlights}
-          onFaceDetected={setFacingFaceIndex}
-          selectedFaceIndex={facingFaceIndex}
+          selectedFaceIndex={selectedFaceIndex}
         />
       </Canvas>
     </div>

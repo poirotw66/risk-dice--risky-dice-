@@ -16,6 +16,7 @@ export default function App() {
 
   const [isRolling, setIsRolling] = useState(false);
   const [showExplosion, setShowExplosion] = useState(false);
+  const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(null); // 預先決定的抽中面
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // Initialize Audio Context on first interaction
@@ -100,6 +101,14 @@ export default function App() {
     initAudio();
     setShowExplosion(false);
     
+    // 點擊按鈕時立即決定抽中的面（0-19的索引）和結果
+    const selectedFace = Math.floor(Math.random() * SIDES); // 0 to 19
+    const isBad = selectedFace === 0; // 第一個面是大凶
+    
+    // 設置預先決定的面
+    setSelectedFaceIndex(selectedFace);
+    
+    // 先設置為滾動狀態
     setIsRolling(true);
     setState(prev => ({ ...prev, outcome: DiceOutcome.ROLLING }));
 
@@ -110,14 +119,12 @@ export default function App() {
       if (clickCount > 8) clearInterval(clickInterval);
     }, 100);
 
+    // 滾動動畫持續時間
     setTimeout(() => {
       clearInterval(clickInterval);
-      
-      const roll = Math.floor(Math.random() * SIDES) + 1; // 1 to 20
-      const isBad = roll === 1; // 1 is Bad
-
       setIsRolling(false);
       
+      // 滾動結束後，設置最終結果
       if (isBad) {
         playSound('lose');
         setShowExplosion(true);
@@ -151,6 +158,7 @@ export default function App() {
       maxStreak: 0,
     });
     setShowExplosion(false);
+    setSelectedFaceIndex(null);
   };
 
   return (
@@ -229,7 +237,11 @@ export default function App() {
 
         {/* The Dice */}
         <div className="mb-12 relative w-full flex justify-center h-[240px] items-center">
-          <RiskDice outcome={state.outcome} isRolling={isRolling} />
+          <RiskDice 
+            outcome={state.outcome} 
+            isRolling={isRolling} 
+            selectedFaceIndex={selectedFaceIndex}
+          />
         </div>
 
         {/* Dynamic Status Message */}
