@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { DiceOutcome } from '../types';
@@ -194,63 +194,141 @@ const IcosahedronDice: React.FC<{
   faceTexts: string[];
   faceColors: string[];
   faceHighlights: boolean[];
-}> = ({ outcome, isRolling, faceTexts, faceColors, faceHighlights }) => {
+  onFaceDetected?: (faceIndex: number) => void;
+  selectedFaceIndex?: number | null; // 上色的那一面（抽中的面）
+}> = ({ outcome, isRolling, faceTexts, faceColors, faceHighlights, onFaceDetected, selectedFaceIndex }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const lastRollingState = useRef(isRolling);
+  const [detectedFaceIndex, setDetectedFaceIndex] = useState<number | null>(null);
+  const rotationCompleteRef = useRef(false);
 
   // 創建正二十面體的頂點和面 - 使用標準定義
   const faces = useMemo(() => {
     return createStandardIcosahedron();
   }, []);
 
-  // 計算讓第一個面朝向相機的旋轉
-  const targetRotation = useMemo(() => {
-    if (faces.length === 0) return { x: 0, y: 0, z: 0 };
+  // 檢測當前朝向相機的面
+  const detectFacingFace = useCallback(() => {
+    if (!groupRef.current || faces.length === 0) return -1;
     
-    // 第一個面的法向量（應該朝向使用者/相機）
-    const face0Normal = faces[0].normal.clone().normalize();
+    const cameraDirection = new THREE.Vector3(0, 0, 1); // 相機方向（Z軸正方向）
+    let maxDot = -Infinity;
+    let facingFaceIndex = 0;
+    
+    // 遍歷所有面，找到法向量與相機方向點積最大的面
+    faces.forEach((face, index) => {
+      // 將面的法向量轉換到世界坐標系
+      const worldNormal = face.normal.clone();
+      worldNormal.applyQuaternion(groupRef.current!.quaternion);
+      
+      // 計算點積（越大表示越朝向相機）
+      const dot = worldNormal.dot(cameraDirection);
+      
+      if (dot > maxDot) {
+        maxDot = dot;
+        facingFaceIndex = index;
+      }
+    });
+    
+    return facingFaceIndex;
+  }, [faces]);
+
+  // 計算讓指定面朝向相機的旋轉（使用四元數，更精確）
+  const calculateTargetQuaternion = useCallback((faceIndex: number) => {
+    if (faces.length === 0 || faceIndex < 0 || faceIndex >= faces.length) {
+      return new THREE.Quaternion();
+    }
+    
+    // 指定面的法向量
+    const faceNormal = faces[faceIndex].normal.clone().normalize();
     
     // 目標方向是朝向相機（Z軸正方向，即 [0, 0, 1]）
     const targetDirection = new THREE.Vector3(0, 0, 1);
     
     // 計算旋轉四元數，將法向量對齊到目標方向
     const quaternion = new THREE.Quaternion();
-    quaternion.setFromUnitVectors(face0Normal, targetDirection);
+    quaternion.setFromUnitVectors(faceNormal, targetDirection);
     
-    // 將四元數轉換為歐拉角（使用 'XYZ' 順序）
-    const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-    
-    return {
-      x: euler.x,
-      y: euler.y,
-      z: euler.z,
-    };
+    return quaternion;
   }, [faces]);
+
+  // 當停止滾動時，立即檢測朝向相機的面（初步檢測）
+  useEffect(() => {
+    if (!isRolling && lastRollingState.current && groupRef.current) {
+      // 剛停止滾動，立即檢測朝向相機的面
+      const facingFace = detectFacingFace();
+      setDetectedFaceIndex(facingFace);
+      
+      // 通知父組件哪個面朝向相機
+      if (onFaceDetected) {
+        onFaceDetected(facingFace);
+      }
+    }
+    lastRollingState.current = isRolling;
+    if (isRolling) {
+      rotationCompleteRef.current = false;
+    }
+  }, [isRolling, detectFacingFace, onFaceDetected]);
+
+  // 計算目標旋轉四元數（讓上色的那一面完整朝向使用者）
+  const targetQuaternion = useMemo(() => {
+    // 必須使用上色的那一面（selectedFaceIndex），如果還沒有則不旋轉
+    // 只有在 selectedFaceIndex 設置後才開始旋轉
+    const faceIndex = selectedFaceIndex !== null && selectedFaceIndex !== undefined
+      ? selectedFaceIndex
+      : null; // 如果還沒有上色，返回 null，不旋轉
+    
+    // 如果目標面改變，重置旋轉完成標記
+    if (faceIndex !== null && faceIndex !== detectedFaceIndex && !isRolling) {
+      rotationCompleteRef.current = false;
+    }
+    
+    return faceIndex !== null ? calculateTargetQuaternion(faceIndex) : new THREE.Quaternion();
+  }, [selectedFaceIndex, detectedFaceIndex, calculateTargetQuaternion, isRolling]);
 
   // 旋轉動畫 - 加快速度
   useFrame((state, delta) => {
     if (isRolling && groupRef.current) {
       // 滾動時隨機旋轉
+      rotationCompleteRef.current = false;
       groupRef.current.rotation.x += delta * 5;
       groupRef.current.rotation.y += delta * 4;
       groupRef.current.rotation.z += delta * 3;
-    } else if (groupRef.current && !isRolling) {
-      // 停止時平滑旋轉到目標位置，讓第一個面朝向相機
-      const current = groupRef.current.rotation;
-      const target = targetRotation;
-      const speed = 10; // 旋轉速度
+    } else if (groupRef.current && !isRolling && selectedFaceIndex !== null && selectedFaceIndex !== undefined) {
+      // 停止時使用四元數平滑旋轉到目標位置，讓上色的那一面完整朝向相機
+      // 只有在 selectedFaceIndex 已設置時才旋轉
+      const currentQuat = groupRef.current.quaternion;
+      const targetQuat = targetQuaternion;
+      const speed = 10; // 提高旋轉速度
       
-      // 使用更平滑的插值
+      // 使用四元數球面線性插值（SLERP），更平滑且精確
       const lerpFactor = Math.min(1, delta * speed);
-      current.x = THREE.MathUtils.lerp(current.x, target.x, lerpFactor);
-      current.y = THREE.MathUtils.lerp(current.y, target.y, lerpFactor);
-      current.z = THREE.MathUtils.lerp(current.z, target.z, lerpFactor);
+      currentQuat.slerp(targetQuat, lerpFactor);
       
       // 當接近目標時，直接設置為目標值以避免微小抖動
-      const threshold = 0.01;
-      if (Math.abs(current.x - target.x) < threshold &&
-          Math.abs(current.y - target.y) < threshold &&
-          Math.abs(current.z - target.z) < threshold) {
-        current.set(target.x, target.y, target.z);
+      const threshold = 0.0001; // 更嚴格的閾值
+      const angle = currentQuat.angleTo(targetQuat);
+      
+      if (angle < threshold) {
+        // 確保精確對齊
+        currentQuat.copy(targetQuat);
+        
+        if (!rotationCompleteRef.current) {
+          rotationCompleteRef.current = true;
+          
+          // 旋轉完成後，驗證是否正確朝向目標面（上色的那一面）
+          const actualFacingFace = detectFacingFace();
+          if (actualFacingFace === selectedFaceIndex) {
+            // 驗證成功，同步狀態
+            if (detectedFaceIndex !== selectedFaceIndex) {
+              setDetectedFaceIndex(selectedFaceIndex);
+            }
+          } else {
+            // 驗證失敗，重新計算旋轉
+            console.warn(`Rotation verification failed: expected face ${selectedFaceIndex}, got ${actualFacingFace}`);
+            rotationCompleteRef.current = false; // 允許重新旋轉
+          }
+        }
       }
     }
   });
@@ -286,22 +364,35 @@ const IcosahedronDice: React.FC<{
 };
 
 const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
+  const [facingFaceIndex, setFacingFaceIndex] = useState<number | null>(null);
+  const lastOutcome = useRef(outcome);
+
+  // 當結果改變時，重置朝向面的索引
+  useEffect(() => {
+    if (outcome !== lastOutcome.current) {
+      setFacingFaceIndex(null);
+      lastOutcome.current = outcome;
+    }
+  }, [outcome]);
+
   // 計算每個面的文字、顏色和高亮狀態
+  // 最終朝向使用者的面就是抽中的面，根據結果上色
   const { faceTexts, faceColors, faceHighlights } = useMemo(() => {
     const texts: string[] = [];
     const colors: string[] = [];
     const highlights: boolean[] = [];
     
-    const isMainBad = outcome === DiceOutcome.GREAT_MISFORTUNE;
-    const hiddenBadIndex = isMainBad ? -1 : Math.floor(Math.random() * 19) + 1;
+    // 如果檢測到朝向相機的面，將那個面設為"抽中的面"
+    // 如果還沒檢測到（滾動中或初始狀態），使用索引0作為默認
+    const selectedFaceIndex = facingFaceIndex !== null ? facingFaceIndex : 0;
 
     for (let i = 0; i < 20; i++) {
       let text = '大吉';
       let color = '#1e293b'; // slate-800
       let highlight = false;
 
-      if (i === 0) {
-        // 第一個面（顯示的面）
+      // 如果這個面是朝向相機的面（抽中的面），根據結果上色
+      if (i === selectedFaceIndex && !isRolling && outcome !== DiceOutcome.IDLE && outcome !== DiceOutcome.ROLLING) {
         if (outcome === DiceOutcome.GREAT_MISFORTUNE) {
           text = '大凶';
           color = '#7f1d1d'; // red-950
@@ -315,10 +406,10 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
           color = '#475569'; // slate-600
         }
       } else {
-        if (i === hiddenBadIndex) {
-          text = '大凶';
-          color = '#0f172a'; // slate-950
-        }
+        // 其他面保持默認樣式
+        text = '大吉';
+        color = '#1e293b'; // slate-800
+        highlight = false;
       }
 
       texts.push(text);
@@ -327,7 +418,7 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
     }
 
     return { faceTexts: texts, faceColors: colors, faceHighlights: highlights };
-  }, [outcome]);
+  }, [outcome, facingFaceIndex, isRolling]);
 
   return (
     <div className="relative w-64 h-64 z-20" style={{ minHeight: '256px' }}>
@@ -353,6 +444,8 @@ const RiskDice: React.FC<RiskDiceProps> = ({ outcome, isRolling }) => {
           faceTexts={faceTexts}
           faceColors={faceColors}
           faceHighlights={faceHighlights}
+          onFaceDetected={setFacingFaceIndex}
+          selectedFaceIndex={facingFaceIndex}
         />
       </Canvas>
     </div>
