@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DiceOutcome, GameState } from './types';
 import RiskDice from './components/RiskDice';
-import { Sparkles, History, Trophy } from 'lucide-react';
+import { Sparkles, History, Trophy, AlertTriangle, Skull, Zap, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { 
   listenToGlobalStreak,
   listenToGlobalMaxStreak,
@@ -328,45 +328,46 @@ export default function App() {
 
       {/* Header - Game Card Title */}
       <header className="z-10 text-center mb-8 relative max-w-4xl w-full">
-        <div className="inline-block relative px-8 py-6 card-border bg-gradient-to-b from-cyan-950/80 to-pink-950/80 backdrop-blur-sm rounded-lg">
+        <div className="inline-block relative px-8 py-6 card-border bg-gradient-to-b from-cyan-950/90 to-pink-950/90 backdrop-blur-sm rounded-lg hover:shadow-[0_0_40px_rgba(1,205,254,0.3)] transition-all duration-300">
             <h1 className="text-3xl md:text-5xl text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-pink-200 to-cyan-300 mb-3 glow-cyan tracking-wider"
                 style={{fontFamily: "'Press Start 2P', cursive"}}>
               風險骰子
             </h1>
             <div className="h-1 w-full bg-gradient-to-r from-transparent via-cyan-400 to-transparent mb-3"></div>
-            <p className="text-cyan-300 text-xs md:text-sm tracking-widest uppercase" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
+            <p className="text-cyan-200 text-xs md:text-sm tracking-widest uppercase font-medium" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
               ★ RISK DICE - D20 OF FATE ★
             </p>
-            <p className="text-pink-400/80 text-xs tracking-wider mt-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
+            <p className="text-pink-300 text-xs tracking-wider mt-1 font-medium" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
               1 Calamity • 19 Fortunes
             </p>
             <button 
               onClick={() => setShowDescription(!showDescription)}
-              className="mt-3 text-cyan-400/60 hover:text-cyan-300 text-xs transition-colors flex items-center gap-1 mx-auto"
-              style={{fontFamily: "'VT323', monospace", fontSize: '14px'}}
+              className="mt-4 text-cyan-300 hover:text-cyan-100 text-sm transition-all duration-200 flex items-center gap-2 mx-auto cursor-pointer hover:scale-105 px-4 py-2 rounded-md bg-cyan-950/30 hover:bg-cyan-950/50 border border-cyan-700/30"
+              style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}
             >
-              <span>{showDescription ? '▲' : '▼'}</span>
+              {showDescription ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               <span>{showDescription ? '隱藏說明' : '查看說明'}</span>
             </button>
         </div>
         
         {/* Description Panel */}
         {showDescription && (
-          <div className="mt-4 card-border bg-gradient-to-b from-gray-950/95 to-red-950/90 backdrop-blur-md rounded-lg p-6 text-left border-2 border-red-900/50 shadow-[0_0_30px_rgba(139,0,0,0.5)] animate-slideDown">
-            <div className="space-y-4 text-sm" style={{fontFamily: "'VT323', monospace", fontSize: '16px', lineHeight: '1.8'}}>
+          <div className="mt-4 card-border bg-gradient-to-b from-gray-900/95 to-red-950/95 backdrop-blur-md rounded-lg p-6 md:p-8 text-left border-2 border-red-800/60 shadow-[0_0_30px_rgba(139,0,0,0.5)] animate-slideDown">
+            <div className="space-y-5 text-sm md:text-base" style={{fontFamily: "'VT323', monospace", fontSize: '17px', lineHeight: '1.75'}}>
               <div>
-                <h3 className="text-red-400 text-lg font-bold mb-2 flex items-center gap-2">
-                  <span className="text-2xl">⚠️</span> 風險骰子（Risk Dice）
+                <h3 className="text-red-300 text-xl font-bold mb-3 flex items-center gap-3">
+                  <AlertTriangle size={24} className="text-red-400" />
+                  <span>風險骰子（Risk Dice）</span>
                 </h3>
-                <p className="text-gray-300">
+                <p className="text-gray-200 leading-relaxed">
                   《獵人（Hunter x Hunter）》貪婪之島篇中登場的特殊關鍵道具，<br/>
-                  也是將「<span className="text-cyan-400">命運</span>」與「<span className="text-pink-400">運氣</span>」具象化的極端博弈工具。
+                  也是將「<span className="text-cyan-300 font-semibold">命運</span>」與「<span className="text-pink-300 font-semibold">運氣</span>」具象化的極端博弈工具。
                 </p>
               </div>
               
-              <div className="border-l-4 border-yellow-600/50 pl-4 bg-yellow-950/20 py-2 rounded">
-                <p className="text-yellow-300">
-                  外型是一顆標準的<span className="font-bold text-yellow-400">二十面骰（D20）</span>，但其結構卻極不公平——<br/>
+              <div className="border-l-4 border-yellow-500/60 pl-4 bg-yellow-900/20 py-3 rounded-r">
+                <p className="text-yellow-200 leading-relaxed">
+                  外型是一顆標準的<span className="font-bold text-yellow-300">二十面骰（D20）</span>，但其結構卻極不公平——<br/>
                   在 20 個面中：<br/>
                   <span className="text-green-400 font-bold text-lg">19 面刻著「大吉」</span><br/>
                   <span className="text-red-400 font-bold text-lg">僅有 1 面刻著「大凶」</span>
@@ -374,66 +375,85 @@ export default function App() {
               </div>
               
               <div>
-                <h4 className="text-cyan-400 font-bold mb-2 text-base">🎲 擲骰規則與本質</h4>
-                <div className="space-y-2 text-gray-300">
-                  <p>每一次擲出風險骰子，都是一次與<span className="text-pink-400">命運</span>的交易：</p>
-                  <div className="pl-4 border-l-2 border-green-500/30">
-                    <p className="text-green-400">
-                      <span className="font-bold">擲出「大吉」</span>：<br/>
+                <h4 className="text-cyan-300 font-bold mb-3 text-lg flex items-center gap-2">
+                  <Zap size={20} className="text-cyan-400" />
+                  <span>擲骰規則與本質</span>
+                </h4>
+                <div className="space-y-3 text-gray-200 leading-relaxed">
+                  <p>每一次擲出風險骰子，都是一次與<span className="text-pink-300 font-semibold">命運</span>的交易：</p>
+                  <div className="pl-4 border-l-2 border-green-500/40 bg-green-950/20 py-2 rounded-r">
+                    <p className="text-green-300 leading-relaxed">
+                      <span className="font-bold text-green-200">擲出「大吉」</span>：<br/>
                       你將獲得強力的幸運效果、加成或特殊收益，彷彿世界暫時站在你這一邊。
                     </p>
                   </div>
-                  <div className="pl-4 border-l-2 border-red-500/50">
-                    <p className="text-red-400">
-                      <span className="font-bold">擲出「大凶」</span>：<br/>
-                      將立即觸發極度不幸的事件，<span className="text-red-300">不但會抵消先前累積的好運</span>，還可能帶來災難性的後果。
+                  <div className="pl-4 border-l-2 border-red-500/60 bg-red-950/20 py-2 rounded-r">
+                    <p className="text-red-300 leading-relaxed">
+                      <span className="font-bold text-red-200">擲出「大凶」</span>：<br/>
+                      將立即觸發極度不幸的事件，<span className="text-red-200 font-semibold">不但會抵消先前累積的好運</span>，還可能帶來災難性的後果。
                     </p>
                   </div>
                 </div>
               </div>
               
-              <div className="bg-red-950/40 border border-red-900/50 rounded p-3">
-                <h4 className="text-red-400 font-bold mb-2 text-base flex items-center gap-2">
-                  <span>⚠️</span> 真正的風險，不在機率
+              <div className="bg-red-900/30 border border-red-800/60 rounded-lg p-4">
+                <h4 className="text-red-200 font-bold mb-3 text-lg flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-red-300" />
+                  <span>真正的風險，不在機率</span>
                 </h4>
-                <p className="text-gray-300">
-                  從數學上看，「大凶」出現的機率只有 <span className="text-yellow-400 font-bold">1/20 (5%)</span>。<br/>
+                <p className="text-gray-200 leading-relaxed">
+                  從數學上看，「大凶」出現的機率只有 <span className="text-yellow-300 font-bold text-lg">1/20 (5%)</span>。<br/>
                   但風險骰子的可怕之處在於：
                 </p>
-                <p className="text-red-300 text-center text-lg font-bold mt-2 italic">
+                <p className="text-red-200 text-center text-xl font-bold mt-3 mb-3 italic leading-relaxed">
                   「你不知道這顆『大凶』，會在第幾次擲出。」
                 </p>
-                <p className="text-gray-400 text-center mt-2">
+                <p className="text-gray-300 text-center leading-relaxed">
                   它不考驗運氣，<br/>
-                  <span className="text-cyan-400">它考驗的是——你什麼時候該停手。</span>
+                  <span className="text-cyan-300 font-semibold">它考驗的是——你什麼時候該停手。</span>
                 </p>
               </div>
               
               <div>
-                <h4 className="text-pink-400 font-bold mb-2 text-base">🧠 道具哲學</h4>
-                <p className="text-gray-300">
+                <h4 className="text-pink-300 font-bold mb-3 text-lg flex items-center gap-2">
+                  <TrendingUp size={20} className="text-pink-400" />
+                  <span>道具哲學</span>
+                </h4>
+                <p className="text-gray-200 leading-relaxed">
                   風險骰子並不是單純的「賭運氣」道具，而是：
                 </p>
-                <p className="text-yellow-300 italic text-center mt-2">
-                  一個將「<span className="text-red-400">貪婪</span>」、「<span className="text-orange-400">自信</span>」、「<span className="text-pink-400">僥倖心理</span>」逐步放大的陷阱。
+                <p className="text-yellow-200 italic text-center mt-3 mb-3 text-lg leading-relaxed">
+                  一個將「<span className="text-red-300 font-semibold">貪婪</span>」、「<span className="text-orange-300 font-semibold">自信</span>」、「<span className="text-pink-300 font-semibold">僥倖心理</span>」逐步放大的陷阱。
                 </p>
-                <p className="text-gray-400 text-center mt-2 text-xs">
+                <p className="text-gray-300 text-center leading-relaxed">
                   用得越久，得到的越多，<br/>
-                  <span className="text-red-400">失去的時候，也會一次全部吐回去。</span>
+                  <span className="text-red-300 font-semibold">失去的時候，也會一次全部吐回去。</span>
                 </p>
               </div>
               
-              <div className="bg-gradient-to-r from-red-950/50 to-gray-950/50 border-2 border-red-800/70 rounded-lg p-4 mt-4">
-                <h4 className="text-red-300 font-bold mb-2 text-base flex items-center gap-2 justify-center">
-                  <span>🩸</span> 使用警告 <span>🩸</span>
+              <div className="bg-gradient-to-r from-red-900/40 to-gray-900/40 border-2 border-red-700/70 rounded-lg p-5">
+                <h4 className="text-red-200 font-bold mb-3 text-lg flex items-center gap-2 justify-center">
+                  <Skull size={20} className="text-red-300" />
+                  <span>使用警告</span>
+                  <Skull size={20} className="text-red-300" />
                 </h4>
-                <p className="text-gray-300 italic text-center leading-relaxed">
+                <p className="text-gray-200 italic text-center leading-relaxed">
                   「幾乎每個使用風險骰子的玩家，<br/>
-                  在前期都會覺得——<span className="text-yellow-400">自己不可能那麼倒楣</span>。」
+                  在前期都會覺得——<span className="text-yellow-300 font-semibold">自己不可能那麼倒楣</span>。」
                 </p>
-                <p className="text-red-400 text-center mt-3 font-bold text-lg">
+                <p className="text-red-300 text-center mt-3 font-bold text-lg leading-relaxed">
                   直到他們擲出那一面為止。
                 </p>
+                <div className="mt-4 p-4 bg-red-950/40 border border-red-800/50 rounded-lg">
+                  <p className="text-red-200 text-center leading-relaxed">
+                    在獵人世界中，風險骰子並非玩具或測運工具，而是一種<span className="text-red-300 font-semibold">強制契約的念能力具現化道具</span>。<br/>
+                    每一次擲骰，你都在與自己的「<span className="text-yellow-300 font-semibold">念</span>」、與世界的「<span className="text-cyan-300 font-semibold">因果</span>」達成交易。<br/>
+                    而交易一旦開始，就無法單方面取消。
+                  </p>
+                  <p className="text-red-100 font-bold text-lg mt-3 text-center leading-relaxed">
+                    只有兩種結果：享受好運直到崩潰，或及時收手全身而退。
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -445,16 +465,16 @@ export default function App() {
         
         {/* Stats HUD - Card Game Style */}
         <div className="w-full grid grid-cols-3 gap-3 mb-12">
-           <div className="card-border bg-gradient-to-b from-cyan-950/90 to-blue-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 transition-transform">
-             <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
+           <div className="card-border bg-gradient-to-b from-cyan-950/90 to-blue-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 hover:shadow-lg hover:shadow-cyan-500/30 transition-all">
+             <div className="text-xs text-cyan-300 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
                <History size={16} /> ROLLS
              </div>
              <div className="text-3xl md:text-4xl font-bold text-cyan-200 glow-text" style={{fontFamily: "'Press Start 2P', cursive"}}>{state.totalRolls}</div>
            </div>
 
-           <div className="relative card-border-gold bg-gradient-to-b from-emerald-950/90 to-teal-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 transition-transform">
-             <div className="text-xs text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
-               <Sparkles size={16} className="text-emerald-400" /> STREAK
+           <div className="relative card-border-gold bg-gradient-to-b from-emerald-950/90 to-teal-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/30 transition-all">
+             <div className="text-xs text-emerald-300 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
+               <Sparkles size={16} className="text-emerald-300" /> STREAK
              </div>
              <div className={`text-4xl md:text-6xl transition-all duration-300 glow-gold ${state.outcome === DiceOutcome.GREAT_MISFORTUNE ? 'text-pink-500' : 'text-emerald-300'}`}
                   style={{fontFamily: "'Press Start 2P', cursive"}}>
@@ -470,8 +490,8 @@ export default function App() {
              )}
            </div>
 
-           <div className="card-border bg-gradient-to-b from-cyan-950/90 to-blue-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 transition-transform">
-             <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
+           <div className="card-border bg-gradient-to-b from-cyan-950/90 to-blue-950/90 backdrop-blur-md p-4 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:scale-105 hover:shadow-lg hover:shadow-cyan-500/30 transition-all">
+             <div className="text-xs text-cyan-300 uppercase tracking-widest mb-2 flex items-center gap-1" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
                <Trophy size={16} /> BEST
              </div>
              <div className="text-3xl md:text-4xl font-bold text-cyan-200 glow-text" style={{fontFamily: "'Press Start 2P', cursive"}}>{state.maxStreak}</div>
@@ -513,7 +533,7 @@ export default function App() {
                 大吉
               </p>
               <div className="h-1 w-full bg-gradient-to-r from-transparent via-emerald-400 to-transparent mb-2"></div>
-              <p className="text-emerald-400 text-sm uppercase tracking-widest" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
+              <p className="text-emerald-300 text-sm uppercase tracking-widest" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
                 ★ FORTUNE SMILES ★
               </p>
             </div>
@@ -524,7 +544,7 @@ export default function App() {
                 大凶
               </p>
               <div className="h-1 w-full bg-gradient-to-r from-transparent via-pink-500 to-transparent mb-2"></div>
-              <p className="text-pink-400 text-sm uppercase tracking-widest" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
+              <p className="text-pink-300 text-sm uppercase tracking-widest" style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}>
                 ☠ CALAMITY STRIKES ☠
               </p>
             </div>
@@ -556,7 +576,7 @@ export default function App() {
       {/* Footer Info - Card Stats */}
       <footer className="mt-auto py-6 text-center">
         <div className="card-border bg-gradient-to-b from-cyan-950/70 to-pink-950/70 backdrop-blur-sm px-8 py-3 rounded-lg inline-block">
-          <div className="flex justify-center gap-6 text-cyan-300" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
+          <div className="flex justify-center gap-6 text-cyan-200" style={{fontFamily: "'VT323', monospace", fontSize: '16px'}}>
               <span className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(5,255,161,0.8)]"></span> 
                 95% FORTUNE
