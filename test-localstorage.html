@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test localStorage Persistence</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        button {
+            margin: 10px 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .info {
+            background: #222;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+    </style>
+</head>
+<body>
+    <h1>🎲 LocalStorage Persistence Test</h1>
+    
+    <div class="info">
+        <h3>Current State:</h3>
+        <div id="currentState">Loading...</div>
+    </div>
+
+    <div class="info">
+        <h3>Actions:</h3>
+        <button onclick="setTestData()">Set Test Data (Streak: 10, Max: 20, Rolls: 50)</button>
+        <button onclick="incrementStreak()">Increment Streak</button>
+        <button onclick="resetStreak()">Reset Streak</button>
+        <button onclick="clearData()">Clear All Data</button>
+        <button onclick="location.reload()">🔄 Refresh Page</button>
+    </div>
+
+    <div class="info">
+        <h3>Test Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const KEY = 'risk-dice-state';
+        
+        function log(message, isError = false) {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            const className = isError ? 'error' : 'success';
+            logEl.innerHTML = `<div class="${className}">[${time}] ${message}</div>` + logEl.innerHTML;
+        }
+
+        function updateDisplay() {
+            const data = localStorage.getItem(KEY);
+            const stateEl = document.getElementById('currentState');
+            
+            if (data) {
+                try {
+                    const parsed = JSON.parse(data);
+                    stateEl.innerHTML = `
+                        <pre>${JSON.stringify(parsed, null, 2)}</pre>
+                    `;
+                    log('✅ Data loaded successfully');
+                } catch (e) {
+                    stateEl.innerHTML = '<span class="error">Error parsing data</span>';
+                    log('❌ Error parsing localStorage data: ' + e.message, true);
+                }
+            } else {
+                stateEl.innerHTML = '<span style="color: #999">No data stored</span>';
+                log('ℹ️ No data in localStorage');
+            }
+        }
+
+        function setTestData() {
+            const testData = {
+                streak: 10,
+                totalRolls: 50,
+                maxStreak: 20
+            };
+            localStorage.setItem(KEY, JSON.stringify(testData));
+            log('📝 Test data set');
+            updateDisplay();
+        }
+
+        function incrementStreak() {
+            const data = localStorage.getItem(KEY);
+            if (data) {
+                const parsed = JSON.parse(data);
+                parsed.streak++;
+                parsed.totalRolls++;
+                parsed.maxStreak = Math.max(parsed.maxStreak, parsed.streak);
+                localStorage.setItem(KEY, JSON.stringify(parsed));
+                log('⬆️ Streak incremented');
+            } else {
+                log('❌ No data to increment', true);
+            }
+            updateDisplay();
+        }
+
+        function resetStreak() {
+            const data = localStorage.getItem(KEY);
+            if (data) {
+                const parsed = JSON.parse(data);
+                parsed.streak = 0;
+                parsed.totalRolls++;
+                localStorage.setItem(KEY, JSON.stringify(parsed));
+                log('🔄 Streak reset');
+            } else {
+                log('❌ No data to reset', true);
+            }
+            updateDisplay();
+        }
+
+        function clearData() {
+            localStorage.removeItem(KEY);
+            log('🗑️ All data cleared');
+            updateDisplay();
+        }
+
+        // Initial load
+        updateDisplay();
+        
+        // Show instructions
+        setTimeout(() => {
+            log('📖 Instructions: Click buttons to test, then click "Refresh Page" to verify data persists');
+        }, 100);
+    </script>
+</body>
+</html>

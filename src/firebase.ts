@@ -91,6 +91,24 @@ export const getGlobalStreak = async (): Promise<number> => {
   }
 };
 
+// 獲取當前全域 maxStreak 值
+export const getGlobalMaxStreak = async (): Promise<number> => {
+  const db = ensureInitialized();
+  if (!db) {
+    console.warn('Firebase not configured. Returning 0.');
+    return 0;
+  }
+
+  try {
+    const maxStreakRef = ref(db, 'globalMaxStreak');
+    const snapshot = await get(maxStreakRef);
+    return snapshot.val() ?? 0;
+  } catch (error) {
+    console.error('Error getting global max streak:', error);
+    return 0;
+  }
+};
+
 // 增加全域 streak（使用原子操作避免競態條件）
 export const incrementGlobalStreak = async (): Promise<number | null> => {
   const db = ensureInitialized();
@@ -101,12 +119,21 @@ export const incrementGlobalStreak = async (): Promise<number | null> => {
 
   try {
     const streakRef = ref(db, 'globalStreak');
+    const maxStreakRef = ref(db, 'globalMaxStreak');
     
     let newValue: number | null = null;
     await runTransaction(streakRef, (currentValue) => {
       newValue = (currentValue || 0) + 1;
       return newValue;
     });
+
+    // 同時更新 maxStreak 如果當前值更大
+    if (newValue !== null) {
+      await runTransaction(maxStreakRef, (currentMax) => {
+        const maxVal = currentMax || 0;
+        return Math.max(maxVal, newValue!);
+      });
+    }
 
     return newValue;
   } catch (error) {
@@ -130,6 +157,32 @@ export const resetGlobalStreak = async (): Promise<boolean> => {
   } catch (error) {
     console.error('Error resetting global streak:', error);
     return false;
+  }
+};
+
+// 監聽全域 maxStreak 值的變化
+export const listenToGlobalMaxStreak = (callback: (maxStreak: number) => void): (() => void) | null => {
+  const db = ensureInitialized();
+  if (!db) {
+    console.warn('Firebase not configured. Using local state.');
+    return null;
+  }
+
+  try {
+    const maxStreakRef = ref(db, 'globalMaxStreak');
+    
+    // 監聽值變化
+    const unsubscribe = onValue(maxStreakRef, (snapshot) => {
+      const value = snapshot.val();
+      callback(value ?? 0);
+    }, (error) => {
+      console.error('Error listening to global max streak:', error);
+    });
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up max streak listener:', error);
+    return null;
   }
 };
 

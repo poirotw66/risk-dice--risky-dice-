@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DiceOutcome, GameState } from './types';
 import RiskDice from './components/RiskDice';
-import { Sparkles, History, Trophy, RotateCcw } from 'lucide-react';
+import { Sparkles, History, Trophy } from 'lucide-react';
 import { 
-  listenToGlobalStreak, 
+  listenToGlobalStreak,
+  listenToGlobalMaxStreak,
+  getGlobalStreak,
+  getGlobalMaxStreak,
   incrementGlobalStreak, 
   resetGlobalStreak,
   isFirebaseAvailable 
@@ -11,14 +14,35 @@ import {
 
 // Configuration
 const SIDES = 20;
+const LOCAL_STORAGE_KEY = 'risk-dice-state';
 
-export default function App() {
-  const [state, setState] = useState<GameState>({
+// 從 localStorage 載入初始狀態
+const loadLocalState = (): GameState => {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      console.log('Loaded from localStorage:', parsed);
+      return {
+        streak: parsed.streak || 0,
+        totalRolls: parsed.totalRolls || 0,
+        outcome: DiceOutcome.IDLE,
+        maxStreak: parsed.maxStreak || 0,
+      };
+    }
+  } catch (error) {
+    console.error('Error loading from localStorage:', error);
+  }
+  return {
     streak: 0,
     totalRolls: 0,
     outcome: DiceOutcome.IDLE,
     maxStreak: 0,
-  });
+  };
+};
+
+export default function App() {
+  const [state, setState] = useState<GameState>(loadLocalState());
 
   const [isRolling, setIsRolling] = useState(false);
   const [showExplosion, setShowExplosion] = useState(false);
@@ -26,28 +50,67 @@ export default function App() {
   const [useGlobalStreak, setUseGlobalStreak] = useState(false); // 是否使用全域 streak
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  // 監聽 Firebase 全域 streak
+  // 自動儲存 state 到 localStorage
+  useEffect(() => {
+    const stateToSave = {
+      streak: state.streak,
+      totalRolls: state.totalRolls,
+      maxStreak: state.maxStreak,
+    };
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+  }, [state.streak, state.totalRolls, state.maxStreak]);
+
+  // 監聽 Firebase 全域 streak 和 maxStreak
   useEffect(() => {
     if (!isFirebaseAvailable()) {
-      console.log('Firebase not configured, using local streak');
+      console.log('Firebase not configured, using local streak with localStorage persistence');
       return;
     }
 
     setUseGlobalStreak(true);
     console.log('Firebase configured, using global streak');
 
-    const unsubscribe = listenToGlobalStreak((globalStreak) => {
+    // 先載入初始數據
+    const loadInitialData = async () => {
+      const [initialStreak, initialMaxStreak] = await Promise.all([
+        getGlobalStreak(),
+        getGlobalMaxStreak()
+      ]);
+      
+      console.log('Loaded initial data from Firebase:', { streak: initialStreak, maxStreak: initialMaxStreak });
+      
+      setState(prev => ({
+        ...prev,
+        streak: initialStreak,
+        maxStreak: initialMaxStreak
+      }));
+    };
+
+    loadInitialData();
+
+    // 設置即時監聽器
+    const unsubscribeStreak = listenToGlobalStreak((globalStreak) => {
       console.log('Global streak updated:', globalStreak);
       setState(prev => ({
         ...prev,
-        streak: globalStreak,
-        maxStreak: Math.max(prev.maxStreak, globalStreak)
+        streak: globalStreak
+      }));
+    });
+
+    const unsubscribeMaxStreak = listenToGlobalMaxStreak((globalMaxStreak) => {
+      console.log('Global max streak updated:', globalMaxStreak);
+      setState(prev => ({
+        ...prev,
+        maxStreak: globalMaxStreak
       }));
     });
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
+      if (unsubscribeStreak) {
+        unsubscribeStreak();
+      }
+      if (unsubscribeMaxStreak) {
+        unsubscribeMaxStreak();
       }
     };
   }, []);
@@ -164,8 +227,15 @@ export default function App() {
         
         // 重置 streak（全域或本地）
         if (useGlobalStreak) {
+          // Firebase 模式：只更新 Firebase，streak 會透過 listener 同步
           await resetGlobalStreak();
+          setState(prev => ({
+            ...prev,
+            totalRolls: prev.totalRolls + 1,
+            outcome: DiceOutcome.GREAT_MISFORTUNE,
+          }));
         } else {
+          // 本地模式：直接更新 state
           setState(prev => ({
             streak: 0,
             totalRolls: prev.totalRolls + 1,
@@ -174,21 +244,21 @@ export default function App() {
           }));
         }
         
-        // 本地狀態更新
-        setState(prev => ({
-          ...prev,
-          totalRolls: prev.totalRolls + 1,
-          outcome: DiceOutcome.GREAT_MISFORTUNE,
-        }));
-        
         setTimeout(() => setShowExplosion(false), 2000);
       } else {
         playSound('win');
         
         // 增加 streak（全域或本地）
         if (useGlobalStreak) {
+          // Firebase 模式：只更新 Firebase，streak 會透過 listener 同步
           await incrementGlobalStreak();
+          setState(prev => ({
+            ...prev,
+            totalRolls: prev.totalRolls + 1,
+            outcome: DiceOutcome.GREAT_FORTUNE,
+          }));
         } else {
+          // 本地模式：直接更新 state
           setState(prev => {
             const newStreak = prev.streak + 1;
             return {
@@ -199,30 +269,8 @@ export default function App() {
             };
           });
         }
-        
-        // 本地狀態更新
-        setState(prev => ({
-          ...prev,
-          totalRolls: prev.totalRolls + 1,
-          outcome: DiceOutcome.GREAT_FORTUNE,
-        }));
       }
-    }, 1200); 
-  };
-
-  const resetGame = async () => {
-    if (useGlobalStreak) {
-      await resetGlobalStreak();
-    }
-    
-    setState({
-      streak: 0,
-      totalRolls: 0,
-      outcome: DiceOutcome.IDLE,
-      maxStreak: 0,
-    });
-    setShowExplosion(false);
-    setSelectedFaceIndex(null);
+    }, 1200);
   };
 
   return (
@@ -405,16 +453,6 @@ export default function App() {
             </span>
           </div>
         </button>
-        
-        {state.totalRolls > 0 && !isRolling && (
-           <button 
-             onClick={resetGame}
-             className="mt-8 card-border bg-gradient-to-b from-pink-950/80 to-rose-950/80 backdrop-blur-sm px-6 py-3 rounded-lg text-pink-400 hover:text-pink-300 text-xs flex items-center gap-2 transition-all hover:scale-105 opacity-80 hover:opacity-100"
-             style={{fontFamily: "'VT323', monospace", fontSize: '18px'}}
-           >
-             <RotateCcw size={16} /> RESET GAME
-           </button>
-        )}
       </main>
 
       {/* Footer Info - Card Stats */}
